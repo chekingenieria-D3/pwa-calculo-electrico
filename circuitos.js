@@ -163,6 +163,9 @@
     set('tens', val); set('sis', p.sis); set('modo', p.modo);
     set('pot', p.ui.pot == null ? '' : p.ui.pot); set('unit', p.ui.unit || 'VA'); set('fp', p.fp || 0.9);
     set('eff', p.ui.eff || p.eff || '0.90');
+    set('iPlaca', p.ui.iPlaca || (p.iPlaca > 0 ? p.iPlaca : ''));
+    set('vfdIn', p.ui.vfdIn || p.vfdIn || '3F');
+    set('protVfd', p.ui.protVfd || String(p.protVfd || 1.25));
     set('lraMult', p.ui.lraMult || (p.lraCustom ? 'custom' : String(p.lraMult || 6)));
     set('lraA', p.ui.lraA || p.lraA || '300');
     set('protMotor', p.ui.protMotor || String(p.protMotor || 2.5));

@@ -1,6 +1,6 @@
 // Service worker: guarda la app para usarla sin conexión.
 // Al publicar cambios, sube el número de versión para forzar la actualización.
-const VERSION = 'calc-nom-v13';
+const VERSION = 'calc-nom-v14';
 const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
 const ARCHIVOS = [
   './', './index.html', './admin.html', './config.js', './license.js', './circuitos.js', './unifilar.js',

@@ -206,7 +206,8 @@ dialog form label{margin-bottom:8px}
         <label class="full"><span>Tipo de carga</span>
           <select id="tipoCarga">
             <option value="std" selected>Estándar (alumbrado / contactos / tablero)</option>
-            <option value="motor">Motor estándar (Art. 430)</option>
+            <option value="motor">Motor arranque directo (Art. 430-22 / 430-52)</option>
+            <option value="vfd">Motor con Variador de Frecuencia — VFD (Art. 430-122)</option>
             <option value="pci">Bomba contra incendio (Art. 695)</option>
           </select></label>
         <label class="full"><span>Dato de la carga</span>
@@ -217,6 +218,17 @@ dialog form label{margin-bottom:8px}
         <label id="lFp"><span>Factor de potencia</span><input id="fp" type="number" inputmode="decimal" value="0.9" min="0.1" max="1" step="0.01"></label>
         <label id="lEff" class="nodisp"><span>Eficiencia motor (η)</span><input id="eff" type="number" inputmode="decimal" value="0.90" min="0.50" max="0.99" step="0.01"></label>
         <label id="lCorr" class="nodisp"><span>Corriente nominal / FLC (A)</span><input id="corr" type="number" inputmode="decimal" value="50" min="0" step="any"></label>
+        <label id="lIPlaca" class="nodisp"><span>Corriente de placa (A, opc. 430-32)</span><input id="iPlaca" type="number" inputmode="decimal" placeholder="Para sobrecarga" min="0" step="any"></label>
+        <label id="lVfdIn" class="nodisp"><span>Entrada del VFD (430-122)</span>
+          <select id="vfdIn">
+            <option value="3F" selected>Trifásica (3F) — estándar</option>
+            <option value="1F3F">Monofásica (1F) → salida motor 3F</option>
+          </select></label>
+        <label id="lProtVfd" class="nodisp"><span>Protección línea VFD (430-130)</span>
+          <select id="protVfd">
+            <option value="1.25" selected>ITM / Fusible al 125 % entrada</option>
+            <option value="1.50">ITM / Fusible al 150 % entrada (manual VFD)</option>
+          </select></label>
         <label id="lLraMult" class="nodisp"><span>Rotor bloqueado (LRA / FLC)</span>
           <select id="lraMult">
             <option value="6" selected>6.0 × FLC (estándar NEMA)</option>
@@ -227,12 +239,12 @@ dialog form label{margin-bottom:8px}
             <option value="custom">LRA conocido (A)</option>
           </select></label>
         <label id="lLraA" class="nodisp"><span>Corriente LRA placa (A)</span><input id="lraA" type="number" inputmode="decimal" value="300" min="0" step="any"></label>
-        <label id="lProtMotor" class="nodisp"><span>Protección cortocircuito (430-52)</span>
+        <label id="lProtMotor" class="nodisp"><span>Protección cortocircuito (Tabla 430-52)</span>
           <select id="protMotor">
-            <option value="2.5" selected>ITM tiempo inverso (250 % FLC)</option>
-            <option value="3.0">Fusible sin retardo (300 % FLC)</option>
-            <option value="1.75">Fusible con retardo (175 % FLC)</option>
-            <option value="8.0">ITM instantáneo (800 % FLC)</option>
+            <option value="2.5" selected>ITM tiempo inverso (250 % máx.)</option>
+            <option value="3.0">Fusible sin retardo (300 % máx.)</option>
+            <option value="1.75">Fusible con retardo (175 % máx.)</option>
+            <option value="8.0">ITM instantáneo (800 % máx. estricto)</option>
           </select></label>
         <label id="lCont" class="chk full"><input type="checkbox" id="cont" checked><span style="margin:0;color:var(--tx)">Carga continua (más de 3 h): conductor e ITM al 125 %</span></label>
         <p id="hintCarga" class="hint full nodisp"></p>
@@ -461,26 +473,110 @@ const SYS={
 };
 const R3=Math.sqrt(3);
 
+// Tablas oficiales NOM-001-SEDE-2012 de Corriente a Plena Carga (FLC)
+// Tabla 430-248: Motores monofásicos de CA [HP, 115V, 200V, 208V, 230V]
+const FLC_1F=[
+  [1/6,4.4,2.5,2.4,2.2],[1/4,5.8,3.3,3.2,2.9],[1/3,7.2,4.1,4.0,3.6],
+  [0.5,9.8,5.6,5.4,4.9],[0.75,13.8,7.9,7.6,6.9],[1,16,9.2,8.8,8],
+  [1.5,20,11.5,11,10],[2,24,13.8,13.2,12],[3,34,19.6,18.7,17],
+  [5,56,32.2,30.8,28],[7.5,80,46,44,40],[10,100,57.5,55,50]
+];
+// Tabla 430-250: Motores trifásicos de inducción jaula de ardilla [HP, 200V, 208V, 230V, 460V, 575V]
+const FLC_3F=[
+  [0.5,2.5,2.4,2.2,1.1,0.9],[0.75,3.7,3.5,3.2,1.6,1.3],[1,4.8,4.6,4.2,2.1,1.7],
+  [1.5,6.9,6.6,6.0,3.0,2.4],[2,7.8,7.5,6.8,3.4,2.7],[3,11.0,10.6,9.6,4.8,3.9],
+  [5,17.5,16.7,15.2,7.6,6.1],[7.5,25.3,24.2,22,11,9],[10,32.2,30.8,28,14,11],
+  [15,48.3,46.2,42,21,17],[20,62.1,59.4,54,27,22],[25,78.2,74.8,68,34,27],
+  [30,92,88,80,40,32],[40,120,114,104,52,41],[50,150,143,130,65,52],
+  [60,177,169,154,77,62],[75,221,211,192,96,77],[100,285,273,248,124,99],
+  [125,359,343,312,156,125],[150,414,396,360,180,144],[200,552,528,480,240,192],
+  [250,692,662,602,302,242],[300,830,794,722,361,289],[350,956,914,832,414,336],
+  [400,1094,1046,952,477,382],[450,1232,1178,1072,535,428],[500,1370,1310,1192,590,472]
+];
+function buscarFlcTabla(hp,fases,v){
+  if(!(hp>0))return null;
+  if(fases===3){
+    const r=FLC_3F.find(x=>Math.abs(x[0]-hp)<1e-4);
+    if(!r)return null;
+    if(v<=202)return{flc:r[1],tabla:'Tabla 430-250 (200 V)'};
+    if(v<=212)return{flc:r[2],tabla:'Tabla 430-250 (208 V)'};
+    if(v<=250)return{flc:r[3],tabla:'Tabla 430-250 (230 V)'};
+    if(v<=500)return{flc:r[4],tabla:'Tabla 430-250 (460 V)'};
+    return{flc:r[5],tabla:'Tabla 430-250 (575 V)'};
+  }else{
+    const r=FLC_1F.find(x=>Math.abs(x[0]-hp)<1e-4);
+    if(!r)return null;
+    if(v<=135)return{flc:r[1],tabla:'Tabla 430-248 (115 V)'};
+    if(v<=202)return{flc:r[2],tabla:'Tabla 430-248 (200 V)'};
+    if(v<=212)return{flc:r[3],tabla:'Tabla 430-248 (208 V)'};
+    return{flc:r[4],tabla:'Tabla 430-248 (230 V)'};
+  }
+}
+
 function calcularN(p){
   const S=SYS[p.sis];
   if(!(p.L>0))return{error:'Escribe la longitud del circuito.'};
   const tipoCarga=p.tipoCarga||'std';
-  const esMotor=tipoCarga==='motor'||tipoCarga==='pci';
+  const esVfd=tipoCarga==='vfd';
   const esPci=tipoCarga==='pci';
+  const esMotorDir=tipoCarga==='motor';
+  const esMotor=esMotorDir||esPci||esVfd;
   const div=p.sis==='1F-2H'?p.vfn:(S.fases===3?R3*p.vff:p.vff);
-  let I,VA;
-  if(p.modo==='P'){ if(!(p.S>0))return{error:'Escribe la potencia de la carga.'}; VA=p.S; I=VA/div; }
-  else { if(!(p.corr>0))return{error:'Escribe la corriente de la carga.'}; I=p.corr; VA=I*div; }
-  // Corriente de diseño del conductor: 125% FLC para motores (430-22) y bombas CI (695-6b), o según checkbox en carga estándar
+  const vMotorNom=p.sis==='1F-2H'?p.vfn:p.vff;
+  let I,VA,flcTablaInfo=null,flcMotor3F=0;
+  if(p.modo==='P'){
+    if(!(p.S>0))return{error:'Escribe la potencia de la carga.'};
+    if(esMotor && p.unit==='HP' && p.hp>0){
+      // Si es VFD con entrada 1F -> salida motor 3F, buscar FLC trifásica y reflejar a entrada 1F
+      if(esVfd && p.vfdIn==='1F3F'){
+        const t3=buscarFlcTabla(p.hp,3,p.vff);
+        if(t3){
+          flcMotor3F=t3.flc;
+          I=t3.flc*R3*1.05; // Corriente de entrada 1F del VFD (~1.05 * sqrt(3) * I_3F)
+          VA=I*vMotorNom;
+          flcTablaInfo=t3.tabla+' (motor 3F '+fmt(t3.flc,1)+' A → entrada VFD 1F)';
+        }else{ VA=p.S; I=VA/div; }
+      }else{
+        const t=buscarFlcTabla(p.hp,S.fases,vMotorNom);
+        if(t){
+          I=esVfd?(t.flc*1.05):t.flc;
+          VA=I*div;
+          flcTablaInfo=t.tabla+(esVfd?' × 1.05 entrada VFD':'');
+        }else{ VA=p.S; I=VA/div; }
+      }
+    }else{
+      VA=p.S; I=VA/div;
+      if(esVfd && p.vfdIn==='1F3F' && S.fases<3) I=I*1.05;
+    }
+  }else{
+    if(!(p.corr>0))return{error:'Escribe la corriente de la carga.'};
+    I=p.corr; VA=I*div;
+  }
+
+  // Corriente de diseño del conductor: 125% FLC (Art. 430-22, 430-122a, 695-6b) o según checkbox en carga estándar
   const Idis=esMotor?(I*1.25):(I*(p.cont?1.25:1));
-  // Corriente de rotor bloqueado (LRA) para motores y bombas contra incendio
+  // Corriente de rotor bloqueado (LRA) para arranque directo y bombas contra incendio
   const lraMult=Number(p.lraMult)||6;
-  const iLra=esMotor?(p.lraCustom&&p.lraA>0?Number(p.lraA):I*lraMult):0;
-  // Selección de ITM: estándar >= Idis, motor >= protMotor*FLC (Art. 430-52), bomba CI >= LRA indefinido (Art. 695-4b)
-  const protMult=esPci?1:(esMotor?(Number(p.protMotor)||2.5):1);
-  const iProtTarget=esPci?iLra:(esMotor?I*protMult:Idis);
-  const itm=ITM_STD.find(x=>x>=iProtTarget);
+  const iLra=(esMotorDir||esPci)?(p.lraCustom&&p.lraA>0?Number(p.lraA):I*lraMult):0;
+
+  // Selección de ITM / Fusible:
+  // - Estándar: >= Idis
+  // - Motor directo (Art. 430-52): protMotor * FLC; Excepción 1 permite subir al inmediato superior excepto disparo instantáneo (800% estricto)
+  // - VFD (Art. 430-130): 125% - 150% de la corriente de entrada del VFD
+  // - Bomba CI (Art. 695-4b): >= LRA indefinido
+  const protMult=esPci?1:(esMotorDir?(Number(p.protMotor)||2.5):(esVfd?(Number(p.protVfd)||1.25):1));
+  const iProtTarget=esPci?iLra:(esMotorDir?I*protMult:(esVfd?I*protMult:Idis));
+  let itm=null, excep1=false;
+  if(esMotorDir && protMult>=8.0){
+    // Art. 430-52(c)(3): ITM instantáneo no debe exceder 800% FLC por defecto
+    const cand=[...ITM_STD].reverse().find(x=>x<=iProtTarget);
+    itm=cand||ITM_STD.find(x=>x>=Idis);
+  }else{
+    itm=ITM_STD.find(x=>x>=iProtTarget);
+    if(esMotorDir && itm && itm>iProtTarget+1e-6) excep1=true;
+  }
   if(!itm)return{error:'La corriente del dispositivo de protección supera 6000 A.'};
+
   const nCircCC=S.ncc+((p.noLin&&S.neutro&&S.fases>1)?1:0);
   const nccTot=nCircCC*p.nCirc;
   const fa=fagrup(nccTot), ft=ftemp(p.amb,p.aisl);
@@ -489,8 +585,10 @@ function calcularN(p){
   const vdv=p.sis==='1F-2H'?p.vfn:p.vff;
   const kf=(S.fases===3)?R3:2;
   const minIdx=IDX[p.minSz];
+  // Art. 110-14(c)(1): el límite de temperatura de terminales de 60°C vs 75°C se evalúa con la corriente del circuito (Idis), no con el ITM sobredimensionado de arranque
+  const iTermRef=esMotor?Idis:itm;
   const termCol=s=>{
-    const c=p.term==='auto'?((itm<=100||IDX[s]<=IDX['2'])?0:1):(p.term==='60'?0:1);
+    const c=p.term==='auto'?((iTermRef<=100||IDX[s]<=IDX['2'])?0:1):(p.term==='60'?0:1);
     return Math.min(c,p.aisl);};
 
   const fpVal=Math.min(1,Math.max(0.1,Number(p.fp)||0.9));
@@ -501,14 +599,11 @@ function calcularN(p){
   const nTramos=nReg+1;
   const angTramo=angTot/nTramos;
   const regMin=angTot>360?(Math.ceil(angTot/360)-1):0;
-  // Coeficiente de fricción cinética típico (0.35 PVC/Al, 0.45 Acero) y factor de tensión de jalado por tramo
   const muFric=rac===2?0.45:0.35;
   const pullMult=Math.exp(muFric*(angTramo*Math.PI/180));
-  // Longitud real considerando desarrollo de curvas (~0.35 m por codo 90°, ~0.20 m por codo 45°) y factor térmico en codos
   const lReal=p.L+c90*0.35+c45*0.20;
   const tMaxAisl=[60,75,90][p.aisl];
   const bendHeatFactor=1+Math.min(0.18,c90*0.015+c45*0.008);
-  // Límites de caída de tensión: Art. 695-7 exige <= 5% a FLC (FP=1.0) y <= 15% a LRA (FP=0.30)
   const vdMaxRun=esPci?5:p.vdMax;
   const vdMaxLra=15;
 
@@ -523,7 +618,6 @@ function calcularN(p){
       const zLraObj=ZEF(p.matF,s,rac,0.30);
       eLra=zLraObj?(kf*(zLraObj.Z/p.nPar)*lReal*iLra/vdv*100):999;
     }
-    // Estimación térmica Neher-McGrath simplificada: elevación de temperatura por efecto Joule (I^2*R)
     const iHilo=I/p.nPar;
     const ratioCarga=ampTab>0?(iHilo/ampTab):0;
     const dT_base=(tMaxAisl-30)*(ratioCarga*ratioCarga)/(fa*fa);
@@ -531,7 +625,6 @@ function calcularN(p){
     const tHotspot=p.amb+dT_base*bendHeatFactor;
     const okTemp=tHotspot<=tMaxAisl && tOp<=tMaxTerm;
     const okAmp=ampCorr*p.nPar>=Idis && ampTerm*p.nPar>=Idis;
-    // En motores (Art. 430) y bombas CI (Art. 695) el ITM protege cortocircuito/LRA y supera ampacidad del cable por norma
     const lim=(!esMotor&&p.matF==='Cu'&&p.nPar===1)?LIM_CU[s]:undefined;
     const okItm=esMotor?true:((itm<=800||ampCorr*p.nPar>=itm)&&(lim===undefined||itm<=lim));
     const okVd=esPci?(e<=vdMaxRun && eLra<=vdMaxLra):(e<=vdMaxRun);
@@ -583,12 +676,21 @@ function calcularN(p){
   const tubo=TUBOS.find(t=>t[1]>=need);
   if(!tubo)return{error:'La canalización requerida excede 155 mm. Divide el circuito en varias canalizaciones.'};
 
+  const iRefOl=(p.iPlaca>0)?Number(p.iPlaca):I;
+  const olMin=iRefOl*1.15, olMax=iRefOl*1.25;
+
   const warns=[];
   if(esPci){
     warns.push('Bomba contra incendio (Art. 695): acometida dedicada antes del desconectador principal (695-3a), canalización exclusiva embebida en ≥ 50 mm de concreto o cable listado resistente al fuego 2 h (695-6d).');
     warns.push('Protección Bomba CI (Art. 695-4b / 695-6g): el ITM de '+itm+' A soporta rotor bloqueado ('+Math.round(iLra)+' A LRA) indefinidamente. Prohibido instalar relevadores de sobrecarga o falla a tierra (GFCI/GFP). Desconectador bloqueable en posición CERRADA con supervisión.');
-  } else if(esMotor){
-    warns.push('Motor estándar (Art. 430-22 / 430-52): conductor dimensionado al 125 % FLC ('+Idis.toFixed(1)+' A) e ITM contra cortocircuito al '+Math.round(protMult*100)+' % FLC ('+itm+' A). Requiere protección contra sobrecarga dedicada (115–125 % FLC) en arrancador.');
+  } else if(esVfd){
+    warns.push('Motor con Variador de Frecuencia — VFD (Art. 430-122 / 430-130): alimentación dimensionada al 125 % de entrada del VFD ('+Idis.toFixed(1)+' A) sin sobredimensionar ITM al 250 % por arranque suave. Verifica el manual del fabricante del VFD para el calibre exacto del ITM o fusible semiconductor.');
+    warns.push('Salida VFD → Motor (Art. 430-122b): instala cable apantallado VFD (1000/2000 V PWM) aterrizado en ambos extremos dentro de canalización metálica dedicada para evitar ruido electromagnético y daño en rodamientos.');
+  } else if(esMotorDir){
+    warns.push('Motor arranque directo (Art. 430-22 / 430-52): conductor al 125 % FLC ('+Idis.toFixed(1)+' A) e ITM contra cortocircuito de '+itm+' A'+(excep1?' (Art. 430-52(c)(1) Excep. 1, escalón inmediato superior)':'')+'. Requiere relevador de sobrecarga en arrancador ajustado entre '+olMin.toFixed(1)+' A (115 %) y '+olMax.toFixed(1)+' A (125 %) según Art. 430-32.');
+  }
+  if(esMotor && p.sis==='3F-4H'){
+    warns.push('Sistema 3F-4H seleccionado en motor: los motores trifásicos estándar no requieren neutro (usa 3F-3H salvo que el controlador tome 127/277 V F-N).');
   }
   if(topadaFase){
     warns.push('Tierra física (Art. 250-122a): la Tabla 250-122 pedía '+sz(gTable)+' '+nm(p.matT)+' por el ITM de '+itm+' A, pero se limita a '+sz(gSize)+' '+nm(p.matT)+' para no exceder el calibre de las fases.');
@@ -612,12 +714,12 @@ function calcularN(p){
   if(p.nPar>1)warns.push('Paralelos: mismo material, calibre, longitud y aislamiento (310-10h), cada juego en su canalización y una tierra por canalización (250-122f).');
   if(p.noLin&&S.neutro)warns.push('Cargas no lineales: el neutro se cuenta como conductor portador de corriente (310-15b5c).');
   if(!esPci&&ifalla&&ifalla<10*itm)warns.push('Corriente de falla estimada de '+Math.round(ifalla)+' A, menos de 10 veces el ITM. Confirma que el disparo magnético actúe.');
-  if(p.sis==='3F-4H'&&!p.noLin)warns.push('Neutro igual que las fases (criterio conservador). Si la carga es desbalanceada, revisa 220-61.');
+  if(p.sis==='3F-4H'&&!p.noLin&&!esMotor)warns.push('Neutro igual que las fases (criterio conservador). Si la carga es desbalanceada, revisa 220-61.');
 
   return{I,VA,Idis,itm,polos:S.polos,ft,fa,nccTot,fin,sAmp,sF,neu,gTable,gSize,gz,aumentada,topadaFase,ifalla,
     suma,count,pct,need,tubo,ocup:suma/tubo[1]*100,warns,vdv,kf,S,nPar:p.nPar,
     c90,c45,nReg,angTot,nTramos,angTramo,regMin,pullMult,lReal,tMaxAisl,
-    tipoCarga,esMotor,esPci,iLra,vdMaxRun,vdMaxLra,protMult};
+    tipoCarga,esMotor,esMotorDir,esVfd,esPci,iLra,vdMaxRun,vdMaxLra,protMult,excep1,flcTablaInfo,flcMotor3F,olMin,olMax,iRefOl};
 }
 // Paralelos automáticos (nPar=0): el menor número de conductores por fase que cumple (310-10h, desde 1/0 AWG)
 function calcular(p){
@@ -651,7 +753,9 @@ function leer(){
   const lraSel=$('lraMult')?$('lraMult').value:'6';
   const lraCustom=lraSel==='custom';
   return{
-    sis:$('sis').value,vff,vfn,tipoCarga,modo:$('modo').value,S,corr:parseFloat($('corr').value),
+    sis:$('sis').value,vff,vfn,tipoCarga,modo:$('modo').value,S,unit,hp:unit==='HP'?val:0,
+    corr:parseFloat($('corr').value),iPlaca:parseFloat($('iPlaca')?$('iPlaca').value:0)||0,
+    vfdIn:$('vfdIn')?$('vfdIn').value:'3F',protVfd:parseFloat($('protVfd')?$('protVfd').value:1.25),
     cont:$('cont').checked,L:parseFloat($('L').value),amb:parseInt($('amb').value,10),
     aisl:parseInt($('aisl').value,10),term:$('term').value,rac:parseInt($('rac').value,10),vdMax:parseFloat($('vd').value),
     matF:$('matF').value,matN:$('matF').value,matT:$('matT').value,minSz:$('minSz').value,
@@ -662,7 +766,12 @@ function leer(){
     nReg:Math.max(0,parseInt($('nReg').value,10)||0),
     lraMult:lraCustom?6:parseFloat(lraSel),lraCustom,lraA:parseFloat($('lraA')?$('lraA').value:300),
     protMotor:parseFloat($('protMotor')?$('protMotor').value:2.5),
-    fp,eff,ui:{pot:$('pot').value,unit:$('unit').value,eff:$('eff')?$('eff').value:'0.90',lraMult:lraSel,lraA:$('lraA')?$('lraA').value:'300',protMotor:$('protMotor')?$('protMotor').value:'2.5'}
+    fp,eff,ui:{
+      pot:$('pot').value,unit:$('unit').value,eff:$('eff')?$('eff').value:'0.90',
+      iPlaca:$('iPlaca')?$('iPlaca').value:'',vfdIn:$('vfdIn')?$('vfdIn').value:'3F',
+      protVfd:$('protVfd')?$('protVfd').value:'1.25',
+      lraMult:lraSel,lraA:$('lraA')?$('lraA').value:'300',protMotor:$('protMotor')?$('protMotor').value:'2.5'
+    }
   };
 }
 const nm=m=>m==='Cu'?'Cu':'Al';
@@ -670,13 +779,15 @@ const sz=s=>/\//.test(s)?s+' AWG':(+s>=250?s+' kcmil':s+' AWG');
 
 function memoria(p,r){
   const L=[];
-  const tipoLbl=r.esPci?'Bomba contra incendio (Art. 695)':(r.esMotor?'Motor estándar (Art. 430)':'Carga estándar');
+  const tipoLbl=r.esPci?'Bomba contra incendio (Art. 695)':(r.esVfd?'Motor con VFD (Art. 430-122)':(r.esMotorDir?'Motor arranque directo (Art. 430)':'Carga estándar'));
   L.push(['Tipo de carga',tipoLbl]);
-  L.push(['Corriente nominal / FLC',fmt(r.I)+' A ('+fmt(r.VA/1000)+' kVA)']);
-  if(r.esMotor)L.push(['Corriente rotor bloqueado (LRA)',fmt(r.iLra,1)+' A ('+(p.lraCustom?'placa':fmt(p.lraMult,1)+' × FLC')+')']);
-  L.push(['Corriente de diseño conductor',fmt(r.Idis)+' A'+(r.esMotor?' (125 % FLC, Art. 430-22/695-6b)':(p.cont?' (125 %)':''))]);
-  const itmNote=r.esPci?' (sostiene LRA indefinido, Art. 695-4b)':(r.esMotor?' (hasta '+Math.round(r.protMult*100)+' % FLC, Art. 430-52)':'');
+  const flcSrc=r.flcTablaInfo?(' · '+r.flcTablaInfo):'';
+  L.push([r.esVfd?'Corriente entrada VFD':'Corriente nominal / FLC',fmt(r.I)+' A ('+fmt(r.VA/1000)+' kVA)'+flcSrc]);
+  if(r.esMotorDir||r.esPci)L.push(['Corriente rotor bloqueado (LRA)',fmt(r.iLra,1)+' A ('+(p.lraCustom?'placa':fmt(p.lraMult,1)+' × FLC')+')']);
+  L.push(['Corriente de diseño conductor',fmt(r.Idis)+' A'+(r.esMotor?' (125 % FLC, Art. 430-22/122/695-6b)':(p.cont?' (125 %)':''))]);
+  const itmNote=r.esPci?' (sostiene LRA indefinido, Art. 695-4b)':(r.esVfd?' ('+Math.round(r.protMult*100)+' % entrada VFD, Art. 430-130)':(r.esMotorDir?' ('+Math.round(r.protMult*100)+' % FLC'+(r.excep1?', Art. 430-52 Excep. 1':'')+')':''));
   L.push(['ITM',r.polos+'P '+r.itm+' A'+itmNote]);
+  if(r.esMotorDir)L.push(['Sobrecarga arrancador (Art. 430-32)',fmt(r.olMin,1)+' A (115 %) a '+fmt(r.olMax,1)+' A (125 %) sobre '+fmt(r.iRefOl,1)+' A '+(p.iPlaca>0?'placa':'FLC')]);
   L.push(['Factor de temperatura',fmt(r.ft)+' ('+[60,75,90][p.aisl]+' °C, ambiente '+p.amb+' °C)']);
   L.push(['Factor de agrupamiento',fmt(r.fa)+' ('+r.nccTot+' conductores)']);
   const f=r.fin;
@@ -704,7 +815,7 @@ function memoria(p,r){
 
 function resumenTexto(p,r){
   const n=p.nPar>1?p.nPar+' × ':'';
-  const tagTipo=r.esPci?' [BOMBA CONTRA INCENDIO - ART. 695]':(r.esMotor?' [MOTOR - ART. 430]':'');
+  const tagTipo=r.esPci?' [BOMBA CONTRA INCENDIO - ART. 695]':(r.esVfd?' [MOTOR VFD - ART. 430-122]':(r.esMotorDir?' [MOTOR - ART. 430]':''));
   let t=p.sis+' '+p.vff+'/'+p.vfn+' V, '+p.L+' m'+tagTipo+'\n';
   t+='Fases: '+(SYS[p.sis].fases*p.nCirc)+' × '+n.replace(' × ','')+(p.nPar>1?' por fase ':' ')+sz(r.sF)+' '+nm(p.matF)+'\n';
   if(r.neu)t+='Neutro: '+sz(r.neu.size)+' '+nm(r.neu.mat)+'\n';
@@ -717,24 +828,40 @@ function resumenTexto(p,r){
   return t;
 }
 
-let ultimo=null;
+let ultimo=null, prevTipoCarga='std';
 function render(){
   const modoP=$('modo').value==='P';
   const tipoC=$('tipoCarga')?$('tipoCarga').value:'std';
-  const esMotor=tipoC==='motor'||tipoC==='pci';
+  // Al cambiar de estándar a motor/VFD/PCI en 3F-4H, conmutar automáticamente a 3F-3H (sin neutro)
+  if(tipoC!==prevTipoCarga){
+    if(tipoC!=='std' && $('sis').value==='3F-4H' && !$('sis').options[3].disabled){
+      $('sis').value='3F-3H';
+    }
+    if(tipoC==='vfd' && $('vfdIn') && $('vfdIn').value==='1F3F' && $('sis').value.startsWith('3F')){
+      $('sis').value='2F-2H';
+    }
+    prevTipoCarga=tipoC;
+  }
+  const esVfd=tipoC==='vfd';
   const esPci=tipoC==='pci';
+  const esMotorDir=tipoC==='motor';
+  const esMotor=esMotorDir||esPci||esVfd;
   const esHP=modoP&&$('unit').value==='HP';
   $('lPot').classList.toggle('nodisp',!modoP);$('lUnit').classList.toggle('nodisp',!modoP);
   $('lFp').classList.toggle('nodisp',!modoP);$('lCorr').classList.toggle('nodisp',modoP);
   if($('lEff'))$('lEff').classList.toggle('nodisp',!esHP);
-  if($('lLraMult'))$('lLraMult').classList.toggle('nodisp',!esMotor);
-  if($('lLraA'))$('lLraA').classList.toggle('nodisp',!esMotor||$('lraMult').value!=='custom');
-  if($('lProtMotor'))$('lProtMotor').classList.toggle('nodisp',tipoC!=='motor');
+  if($('lIPlaca'))$('lIPlaca').classList.toggle('nodisp',!esMotorDir);
+  if($('lVfdIn'))$('lVfdIn').classList.toggle('nodisp',!esVfd);
+  if($('lProtVfd'))$('lProtVfd').classList.toggle('nodisp',!esVfd);
+  if($('lLraMult'))$('lLraMult').classList.toggle('nodisp',!(esMotorDir||esPci));
+  if($('lLraA'))$('lLraA').classList.toggle('nodisp',!(esMotorDir||esPci)||$('lraMult').value!=='custom');
+  if($('lProtMotor'))$('lProtMotor').classList.toggle('nodisp',!esMotorDir);
   if($('lCont'))$('lCont').classList.toggle('nodisp',esMotor);
   if($('hintCarga')){
     const hc=$('hintCarga');
-    if(esPci){ hc.textContent='Art. 695: cable al 125 % FLC, caída ≤ 5 % FLC y ≤ 15 % en rotor bloqueado (LRA), ITM soporta LRA indefinido sin sobrecarga ni GFCI.'; hc.classList.remove('nodisp'); }
-    else if(esMotor){ hc.textContent='Art. 430: cable al 125 % FLC (Art. 430-22), protección contra cortocircuito según Tabla 430-52 y tierra topada a fase (Art. 250-122a).'; hc.classList.remove('nodisp'); }
+    if(esPci){ hc.textContent='Art. 695: FLC de Tabla NOM, cable 125 %, caída ≤ 5 % FLC y ≤ 15 % LRA, ITM soporta LRA indefinido sin sobrecarga ni GFCI.'; hc.classList.remove('nodisp'); }
+    else if(esVfd){ hc.textContent='Art. 430-122 / 430-130: alimentación al 125 % entrada VFD, ITM sin pico 250 % por arranque suave y cable apantallado VFD hacia el motor.'; hc.classList.remove('nodisp'); }
+    else if(esMotorDir){ hc.textContent='Art. 430: FLC oficial Tablas 430-248/250 en HP, cable 125 % (430-22), ITM Tabla 430-52 y tierra topada a fase (250-122a).'; hc.classList.remove('nodisp'); }
     else { hc.classList.add('nodisp'); }
   }
   const p=leer(), out=$('out'), bar=$('bar');
@@ -748,14 +875,14 @@ function render(){
   p.nPar=r.nPar; ultimo={p,r};
   const par=p.nPar>1?p.nPar+' por fase, cada juego en su tubo, ':'';
   const nF=SYS[p.sis].fases*p.nCirc;
-  const badgeTipo=r.esPci?' · Bomba CI (695)':(r.esMotor?' · Motor (430)':'');
+  const badgeTipo=r.esPci?' · Bomba CI (695)':(r.esVfd?' · VFD (430-122)':(r.esMotorDir?' · Motor (430)':''));
   let h='<div class="tag"><header><b>'+p.sis+' · '+p.vff+'/'+p.vfn+' V'+badgeTipo+'</b><span>'+fmt(p.L,0)+' m</span></header>';
   h+='<div class="cr"><i class="bar p"></i><div class="k">Fases</div><div class="v">'+(nF*p.nPar)+' × '+sz(r.sF)+' '+nm(p.matF)+'<span class="s">'+par+'ampacidad corregida '+fmt(r.fin.ampCorr*p.nPar,0)+' A</span></div></div>';
   if(r.neu)h+='<div class="cr"><i class="bar n"></i><div class="k">Neutro</div><div class="v">'+(p.nCirc*p.nPar)+' × '+sz(r.neu.size)+' '+nm(r.neu.mat)+'<span class="s">ampacidad '+r.neu.ampTab+' A en tabla</span></div></div>';
   const gSub=r.topadaFase?'topada a fase (250-122a)':(r.aumentada?'aumentada por 250-122(b)':'Tabla 250-122');
   h+='<div class="cr"><i class="bar g"></i><div class="k">Tierra</div><div class="v">'+p.nPar+' × '+sz(r.gSize)+' '+nm(p.matT)+'<span class="s">'+gSub+(p.bare?', desnuda':'')+'</span></div></div>';
   h+='<div class="cr"><i class="bar t"></i><div class="k">Tubo</div><div class="v">'+(p.nPar>1?p.nPar+' × ':'')+r.tubo[0]+' mm<span class="s">ocupación '+fmt(r.ocup,0)+' % (máx. '+Math.round(r.pct*100)+' %)</span></div></div>';
-  const itmSub=r.esPci?'sostiene LRA ('+fmt(r.iLra,0)+' A) sin disparo':(r.esMotor?'arranque motor ('+Math.round(r.protMult*100)+'% FLC)':'corriente de diseño '+fmt(r.Idis)+' A');
+  const itmSub=r.esPci?'sostiene LRA ('+fmt(r.iLra,0)+' A) sin disparo':(r.esVfd?'línea VFD ('+Math.round(r.protMult*100)+'% entrada)':(r.esMotorDir?'Tabla 430-52 ('+Math.round(r.protMult*100)+'% FLC'+(r.excep1?', Excep. 1':'')+')':'corriente de diseño '+fmt(r.Idis)+' A'));
   h+='<div class="cr"><i class="bar t"></i><div class="k">Interruptor</div><div class="v">'+r.polos+'P '+r.itm+' A<span class="s">'+itmSub+'</span></div></div>';
   const tClass=r.fin.tHotspot>r.tMaxAisl-5?'bad':'ok';
   const bClass=r.angTramo>360?'bad':'ok';
@@ -774,7 +901,7 @@ function render(){
     catch(e){$('copiar').textContent='No se pudo copiar';}
     setTimeout(()=>{const b=$('copiar');if(b)b.textContent='Copiar memoria';},1600);
   };
-  $('reset').onclick=()=>{$('f').reset();render();};
+  $('reset').onclick=()=>{$('f').reset();prevTipoCarga='std';render();};
   refrescarTablas(p);
 }
 
@@ -798,7 +925,13 @@ function refrescarTablas(p){
 }
 
 document.getElementById('f').addEventListener('input',render);
-document.getElementById('f').addEventListener('change',render);
+document.getElementById('f').addEventListener('change',(ev)=>{
+  if(ev.target&&ev.target.id==='vfdIn'){
+    if($('vfdIn').value==='1F3F'&&$('sis').value.startsWith('3F'))$('sis').value='2F-2H';
+    else if($('vfdIn').value==='3F'&&!$('sis').value.startsWith('3F'))$('sis').value='3F-3H';
+  }
+  render();
+});
 $('refd').addEventListener('toggle',()=>refrescarTablas(leer()));
 render();
 
