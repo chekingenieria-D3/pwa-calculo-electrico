@@ -155,12 +155,17 @@
   function alReset() { edit = null; numAuto = true; pintarSelTab(); aplicarTablero(); if (window.render) render(); }
 
   function escribir(p) {
-    const set = (id, v) => { $(id).value = v; };
+    const set = (id, v) => { if ($(id)) $(id).value = v; };
     if (!p.ui) p.ui = { pot: '', unit: 'VA' };
     const val = p.vff + '/' + p.vfn;
     if (![...$('tens').options].some((o) => o.value === val)) $('tens').add(new Option(p.vff + ' / ' + p.vfn, val));
+    set('tipoCarga', p.tipoCarga || 'std');
     set('tens', val); set('sis', p.sis); set('modo', p.modo);
     set('pot', p.ui.pot == null ? '' : p.ui.pot); set('unit', p.ui.unit || 'VA'); set('fp', p.fp || 0.9);
+    set('eff', p.ui.eff || p.eff || '0.90');
+    set('lraMult', p.ui.lraMult || (p.lraCustom ? 'custom' : String(p.lraMult || 6)));
+    set('lraA', p.ui.lraA || p.lraA || '300');
+    set('protMotor', p.ui.protMotor || String(p.protMotor || 2.5));
     set('corr', p.corr == null ? '' : p.corr); $('cont').checked = !!p.cont;
     set('L', p.L); set('amb', p.amb); set('aisl', String(p.aisl)); set('term', p.term); set('rac', String(p.rac)); set('vd', String(p.vdMax));
     set('matF', p.matF); set('matT', p.matT); set('minSz', p.minSz); set('nPar', p.nPar === 0 ? 'auto' : String(p.nPar)); set('nCirc', p.nCirc);
